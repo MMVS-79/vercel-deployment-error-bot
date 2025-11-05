@@ -62,6 +62,9 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
+          # Mask the Vercel token to prevent it from appearing in logs
+          echo "::add-mask::$VERCEL_TOKEN"
+          
           DEPLOYMENT_ID="${{ steps.get_details.outputs.deployment_id }}"
 
           if [ -z "$DEPLOYMENT_ID" ]; then
@@ -120,7 +123,7 @@ jobs:
             
             if (!sha) {
               console.log('No SHA found in deployment status');
-              return null;
+              return { pr_number: null, commit_sha: null };
             }
             
             console.log(`Looking for PRs associated with commit: ${sha}`);
@@ -132,28 +135,31 @@ jobs:
                 commit_sha: sha
               });
               
-              // Return the first PR number found, or null
+              // Return both the PR number and the short commit SHA
               if (prs.length > 0) {
                 console.log(`Found PR #${prs[0].number}`);
-                return prs[0].number;
+                return { 
+                  pr_number: prs[0].number,
+                  commit_sha: sha.substring(0, 7)
+                };
               }
               
               console.log('No PRs found for this commit');
-              return null;
+              return { pr_number: null, commit_sha: sha.substring(0, 7) };
             } catch (error) {
               console.log(`Error finding PR: ${error.message}`);
-              return null;
+              return { pr_number: null, commit_sha: sha.substring(0, 7) };
             }
 
       - name: Post or delete PR comment
         # Only run if it's a Vercel deployment AND we found a PR number
-        if: steps.check_vercel.outputs.is_vercel == 'true' && steps.find_pr.outputs.result != 'null'
+        if: steps.check_vercel.outputs.is_vercel == 'true' && fromJSON(steps.find_pr.outputs.result).pr_number != null
         uses: actions/github-script@v7
         env:
-          PR_NUMBER: ${{ steps.find_pr.outputs.result }}
+          PR_NUMBER: ${{ fromJSON(steps.find_pr.outputs.result).pr_number }}
           DEPLOYMENT_STATE: ${{ steps.get_details.outputs.deployment_state }}
           DEPLOYMENT_URL: ${{ steps.get_details.outputs.deployment_url }}
-          COMMIT_SHA: ${{ github.event.deployment_status.deployment.sha }}
+          COMMIT_SHA: ${{ fromJSON(steps.find_pr.outputs.result).commit_sha }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -162,7 +168,7 @@ jobs:
             // Parse environment variables passed from the YAML context
             const prNumber = parseInt(process.env.PR_NUMBER);
             const deploymentUrl = process.env.DEPLOYMENT_URL;
-            const commitSha = process.env.COMMIT_SHA ? process.env.COMMIT_SHA.substring(0, 7) : 'unknown';
+            const commitSha = process.env.COMMIT_SHA || 'unknown';
             const state = process.env.DEPLOYMENT_STATE;
             
             const commentHeader = '## 🚨 Vercel Deployment Failed';
