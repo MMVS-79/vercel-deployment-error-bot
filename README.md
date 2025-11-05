@@ -1,7 +1,11 @@
 # Vercel Deployment Error → GitHub PR Comments
 
+> **⚠️ IMPORTANT:** This webhook approach requires a **Vercel Pro plan** ($20/month per user).  
+> **🆓 On the free Hobby plan?** → Use the **[FREE GitHub Actions alternative](./README-FREE-ALTERNATIVE.md)** instead!
+
 > **🤔 First time here?** → [START-HERE.md](./START-HERE.md) explains the deployment model in 30 seconds  
-> **📚 Need navigation?** → [INDEX.md](./INDEX.md) has all documentation organized by purpose
+> **📚 Need navigation?** → [INDEX.md](./INDEX.md) has all documentation organized by purpose  
+> **💰 Compare approaches** → [COMPARISON.md](./COMPARISON.md) - Webhooks vs GitHub Actions
 
 Automatically post detailed Vercel deployment error logs as comments on GitHub pull requests when builds fail.
 
@@ -24,6 +28,27 @@ When a Vercel deployment fails on a PR:
 **Before:** Vercel comments "Deployment failed" with a link  
 **After:** Full build error logs posted directly in the PR ✨
 
+## 💡 Which Approach Should You Use?
+
+### 🆓 FREE: GitHub Actions (Recommended for most users)
+- ✅ Works on **Vercel Hobby (free) plan**
+- ✅ Zero cost forever
+- ✅ No separate deployment needed
+- ✅ Zero maintenance
+- ⏱️ ~10 second delay after deployment fails
+
+**→ [Setup the FREE alternative](./README-FREE-ALTERNATIVE.md)** (5 minute setup)
+
+### 💳 PAID: Vercel Webhooks (This README)
+- 💰 Requires **Vercel Pro plan** ($20/month per user minimum)
+- ⚡ Real-time notifications
+- 🎯 Central service for all projects
+- 🔧 Requires deploying separate service
+
+**→ Continue below if you have Vercel Pro**
+
+**Not sure?** See [COMPARISON.md](./COMPARISON.md) for detailed comparison.
+
 ## 🏗️ How It Works
 
 ```
@@ -38,6 +63,9 @@ Your Apps (unchanged)          Error Bot (deploy once)
 **Important:** This is NOT added to your app projects. It's a separate service.
 
 ## 🚀 Quick Start
+
+**⚠️ Prerequisite:** This approach requires a **Vercel Pro plan** for webhook access.  
+**On free plan?** → [Use GitHub Actions instead](./README-FREE-ALTERNATIVE.md)
 
 **Note:** This is deployed as a **separate service** from your apps. See [INTEGRATION-GUIDE.md](./INTEGRATION-GUIDE.md) for details.
 
@@ -83,6 +111,8 @@ In your Vercel project dashboard:
 | `VERCEL_CLIENT_SECRET` | `xxx...` | Get in next step ↓ |
 
 ### 4. Create Vercel Webhook
+
+**Note:** Webhooks are a Pro plan feature. If you don't see the Webhooks option, you'll need to upgrade to Pro or [use the free GitHub Actions alternative](./README-FREE-ALTERNATIVE.md).
 
 1. Go to [Vercel Dashboard → Settings → Webhooks](https://vercel.com/dashboard/webhooks)
 2. Click "Create Webhook"
@@ -194,6 +224,14 @@ ${errorMessage}
 - ✅ Minimal API permissions required
 
 ## 🐛 Troubleshooting
+
+### "I don't see Webhooks in my Vercel dashboard"
+
+Webhooks are only available on Vercel Pro plans ($20/month per user). If you're on the free Hobby plan:
+- **Option 1:** Upgrade to Vercel Pro to use this webhook approach
+- **Option 2:** Use the [FREE GitHub Actions alternative](./README-FREE-ALTERNATIVE.md) (recommended)
+
+The GitHub Actions approach gives you the same functionality for $0/month!
 
 ### Comments Not Appearing?
 
