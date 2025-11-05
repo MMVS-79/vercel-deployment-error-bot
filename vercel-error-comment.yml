@@ -1,12 +1,10 @@
 name: Vercel Deployment Error Comment
 
-# Triggers when Vercel deployment completes
 on:
   deployment_status:
 
 jobs:
   comment-on-failure:
-    # Only run when deployment fails
     if: github.event.deployment_status.state == 'failure'
     runs-on: ubuntu-latest
     
@@ -25,10 +23,7 @@ jobs:
         id: get_details
         run: |
           DEPLOYMENT_URL="${{ github.event.deployment_status.target_url }}"
-          
-          # Extract deployment ID from URL
           DEPLOYMENT_ID=$(echo "$DEPLOYMENT_URL" | grep -oP 'dpl_[a-zA-Z0-9]+' || echo "")
-          
           echo "deployment_id=$DEPLOYMENT_ID" >> $GITHUB_OUTPUT
           echo "deployment_url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
       
@@ -45,18 +40,15 @@ jobs:
             exit 0
           fi
           
-          # Fetch deployment events/logs
           RESPONSE=$(curl -s -H "Authorization: Bearer $VERCEL_TOKEN" \
             "https://api.vercel.com/v3/deployments/$DEPLOYMENT_ID/events")
           
-          # Extract error messages from logs
           ERROR_LOGS=$(echo "$RESPONSE" | jq -r '.[] | select(.payload.text | contains("Error") or contains("error") or contains("Failed") or contains("failed")) | .payload.text' | head -50)
           
           if [ -z "$ERROR_LOGS" ]; then
             ERROR_LOGS="Deployment failed but no specific error logs were captured. Check the Vercel dashboard for details."
           fi
           
-          # Save to file to handle multiline output
           echo "$ERROR_LOGS" > error_logs.txt
       
       - name: Find PR number
@@ -88,18 +80,20 @@ jobs:
             const prNumber = ${{ steps.find_pr.outputs.result }};
             const deploymentUrl = '${{ steps.get_details.outputs.deployment_url }}';
             
-            const commentBody = `## 🚨 Vercel Deployment Failed
-            
-**Deployment:** [View on Vercel](${deploymentUrl})
-**Commit:** ${context.sha.substring(0, 7)}
-
-### Error Details:
-\`\`\`
-${errorLogs}
-\`\`\`
-
----
-<sub>This comment was automatically posted by GitHub Actions when the Vercel deployment failed.</sub>`;
+            const commentBody = [
+              '## 🚨 Vercel Deployment Failed',
+              '',
+              `**Deployment:** [View on Vercel](${deploymentUrl})`,
+              `**Commit:** ${context.sha.substring(0, 7)}`,
+              '',
+              '### Error Details:',
+              '```',
+              errorLogs,
+              '```',
+              '',
+              '---',
+              '<sub>This comment was automatically posted by GitHub Actions when the Vercel deployment failed.</sub>'
+            ].join('\n');
             
             await github.rest.issues.createComment({
               owner: context.repo.owner,
