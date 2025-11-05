@@ -1,0 +1,27 @@
+{
+  "name": "vercel-error-to-github-pr",
+  "version": "1.0.0",
+  "description": "Automatically post Vercel deployment errors as comments on GitHub PRs",
+  "main": "api/vercel-webhook.js",
+  "scripts": {
+    "test": "node test-webhook.js",
+    "dev": "vercel dev"
+  },
+  "keywords": [
+    "vercel",
+    "github",
+    "webhook",
+    "deployment",
+    "ci/cd",
+    "automation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {
+    "@vercel/node": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

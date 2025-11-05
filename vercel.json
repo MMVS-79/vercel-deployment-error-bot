@@ -1,0 +1,22 @@
+{
+  "version": 2,
+  "name": "vercel-error-to-github-pr",
+  "builds": [
+    {
+      "src": "api/**/*.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/webhook",
+      "dest": "/api/vercel-webhook.js"
+    }
+  ],
+  "env": {
+    "VERCEL_CLIENT_SECRET": "",
+    "VERCEL_API_TOKEN": "",
+    "GITHUB_TOKEN": ""
+  },
+  "regions": ["iad1"]
+}
