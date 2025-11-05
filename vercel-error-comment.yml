@@ -30,15 +30,30 @@ jobs:
         if: steps.check_vercel.outputs.is_vercel == 'true'
         id: get_details
         run: |
-          # The deployment ID is needed for Vercel API calls
-          DEPLOYMENT_ID="${{ github.event.deployment_status.deployment.id }}"
-          # target_url is the Vercel preview/deployment URL
-          DEPLOYMENT_URL="${{ github.event.deployment_status.target_url }}"
+          # Extract Vercel deployment ID from the target_url
+          # Vercel URLs are typically: https://vercel.com/{team}/{project}/{deployment-id}
+          # or the deployment ID is in the environment_url: https://{deployment-id}-{project}.vercel.app
+          TARGET_URL="${{ github.event.deployment_status.target_url }}"
+          ENV_URL="${{ github.event.deployment_status.environment_url }}"
           DEPLOYMENT_STATE="${{ github.event.deployment_status.state }}"
           
+          # Try to extract deployment ID from environment URL (more reliable)
+          # Format: https://deployment-id-project-hash.vercel.app
+          if [[ "$ENV_URL" =~ ^https://([a-z0-9]+)-.*\.vercel\.app ]]; then
+            DEPLOYMENT_ID="${BASH_REMATCH[1]}"
+          else
+            # Fallback: try to extract from target_url
+            DEPLOYMENT_ID=$(echo "$TARGET_URL" | grep -oP '[^/]+$')
+          fi
+          
           echo "deployment_id=$DEPLOYMENT_ID" >> $GITHUB_OUTPUT
-          echo "deployment_url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
+          echo "deployment_url=$TARGET_URL" >> $GITHUB_OUTPUT
           echo "deployment_state=$DEPLOYMENT_STATE" >> $GITHUB_OUTPUT
+          
+          # Debug output
+          echo "Extracted Deployment ID: $DEPLOYMENT_ID"
+          echo "Target URL: $TARGET_URL"
+          echo "Environment URL: $ENV_URL"
 
       - name: Fetch Vercel logs (only on failure)
         # Only run if it's a Vercel deployment and the state is failure
@@ -55,15 +70,38 @@ jobs:
             exit 0
           fi
           
-          # Attempt to fetch the last 50 error-related lines from the event stream
+          # Attempt to fetch the error-related lines from the Vercel events API
           # This requires the VERCEL_TOKEN to have correct permissions.
-          # FIX: Removed the extraneous markdown link brackets around the URL.
-          RESPONSE=$(curl -s -H "Authorization: Bearer $VERCEL_TOKEN" \
+          echo "Fetching logs for deployment: $DEPLOYMENT_ID"
+          
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -H "Authorization: Bearer $VERCEL_TOKEN" \
             "https://api.vercel.com/v2/deployments/$DEPLOYMENT_ID/events")
+          
+          # Extract HTTP status code
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          
+          echo "API Response Code: $HTTP_CODE"
+          
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "Failed to fetch logs from Vercel API (HTTP $HTTP_CODE)." > error_logs.txt
+            echo "Please check the Vercel dashboard for error details." >> error_logs.txt
+            exit 0
+          fi
 
-          # Filter the last 50 log lines that contain error keywords.
-          # We use `head -50` to limit the size of the comment.
-          ERROR_LOGS=$(echo "$RESPONSE" | jq -r '.[] | select(.payload.text | test("Error|error|Failed|failed|ERR")) | .payload.text' | head -50)
+          # Check if response is valid JSON and contains data
+          if echo "$BODY" | jq -e . >/dev/null 2>&1; then
+            # Filter the last 50 log lines that contain error keywords.
+            ERROR_LOGS=$(echo "$BODY" | jq -r '
+              if type == "array" then 
+                .[] | select(.payload.text? | strings | test("Error|error|Failed|failed|ERR|Exception|BUILD_ERROR|npm ERR|ERROR")) | .payload.text 
+              else 
+                empty 
+              end' 2>/dev/null | head -50)
+          else
+            ERROR_LOGS=""
+          fi
 
           if [ -z "$ERROR_LOGS" ]; then
             ERROR_LOGS="Deployment failed but no specific error logs were captured via the API. Please check the Vercel dashboard for details."
@@ -80,14 +118,32 @@ jobs:
             // Use the explicit path to the commit SHA from the deployment status event
             const sha = context.payload.deployment_status.deployment.sha;
             
-            const { data: prs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              commit_sha: sha
-            });
-            // Return the first PR number found, or null
-            if (prs.length > 0) return prs[0].number;
-            return null;
+            if (!sha) {
+              console.log('No SHA found in deployment status');
+              return null;
+            }
+            
+            console.log(`Looking for PRs associated with commit: ${sha}`);
+            
+            try {
+              const { data: prs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                commit_sha: sha
+              });
+              
+              // Return the first PR number found, or null
+              if (prs.length > 0) {
+                console.log(`Found PR #${prs[0].number}`);
+                return prs[0].number;
+              }
+              
+              console.log('No PRs found for this commit');
+              return null;
+            } catch (error) {
+              console.log(`Error finding PR: ${error.message}`);
+              return null;
+            }
 
       - name: Post or delete PR comment
         # Only run if it's a Vercel deployment AND we found a PR number
@@ -97,18 +153,22 @@ jobs:
           PR_NUMBER: ${{ steps.find_pr.outputs.result }}
           DEPLOYMENT_STATE: ${{ steps.get_details.outputs.deployment_state }}
           DEPLOYMENT_URL: ${{ steps.get_details.outputs.deployment_url }}
+          COMMIT_SHA: ${{ github.event.deployment_status.deployment.sha }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
+            
             // Parse environment variables passed from the YAML context
             const prNumber = parseInt(process.env.PR_NUMBER);
             const deploymentUrl = process.env.DEPLOYMENT_URL;
-            const commitSha = context.sha.substring(0, 7);
+            const commitSha = process.env.COMMIT_SHA ? process.env.COMMIT_SHA.substring(0, 7) : 'unknown';
             const state = process.env.DEPLOYMENT_STATE;
             
             const commentHeader = '## 🚨 Vercel Deployment Failed';
             const commentFooter = '<sub>This comment was automatically posted by GitHub Actions when the Vercel deployment failed.</sub>';
+
+            console.log(`Processing ${state} state for PR #${prNumber}`);
 
             // Find an existing failure comment posted by this bot
             const { data: comments } = await github.rest.issues.listComments({
@@ -130,13 +190,12 @@ jobs:
               const body = [
                 commentHeader,
                 '',
-                `**Status:** **Failure**`,
+                `**Status:** ❌ **Failure**`,
                 `**Deployment:** [View on Vercel](${deploymentUrl})`,
                 `**Commit:** \`${commitSha}\``,
                 '',
                 '### Error Snippet:',
-                // Added 'bash' for syntax highlighting
-                '```bash', 
+                '```bash',
                 errorLogs,
                 '```',
                 '',
